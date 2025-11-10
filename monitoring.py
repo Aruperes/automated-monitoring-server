@@ -119,7 +119,7 @@ def main():
         return
     except PermissionError:
         print(f"Error: Tidak memiliki izin untuk membaca {LOG_FILE_PATH}.")
-        print("Pastikan Jenkins (atau user yang menjalankan skrip) memiliki izin baca.")
+        print("Pastikan Jenkins memiliki izin baca.")
         return
     except Exception as e:
         print(f"Error saat membaca file log: {e}")
