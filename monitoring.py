@@ -36,7 +36,7 @@ def setup_gemini():
     """Mengkonfigurasi dan menginisialisasi model Gemini."""
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash') # Menggunakan Flash untuk kecepatan
+        model = genai.GenerativeModel('gemini-2.5-flash') # Menggunakan Flash untuk kecepatan
         return model
     except Exception as e:
         print(f"Error konfigurasi Gemini: {e}")
