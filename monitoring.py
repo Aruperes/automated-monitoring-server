@@ -24,19 +24,20 @@ GEMINI_API_KEY = 'AIzaSyDXr6zd7wkAZm1HGOAkAAPK-igMc29n37E'
 FONNTE_API_TOKEN = 'YojmEUBfp9T7Zt8N9VBm'     
 YOUR_PHONE_NUMBER = '6289698035966'
 
-# Pola Regex untuk mendeteksi kegagalan login
-# Ini menangkap timestamp, dan alamat IP
 LOG_PATTERN = re.compile(
-    r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*sshd\[\d+\]: Failed password for .* from ([\d\.]+) port'
+    r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}).*sshd\[\d+\]: Failed password .* from ([\d\.]+) port'
 )
 
 # --- 2. FUNGSI API (GEMINI & FONNTE) ---
 
 def setup_gemini():
     """Mengkonfigurasi dan menginisialisasi model Gemini."""
+    if not GEMINI_API_KEY:
+        print("Error: GEMINI_API_KEY tidak ditemukan di environment variables.")
+        return None
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash') # Menggunakan Flash untuk kecepatan
+        model = genai.GenerativeModel('gemini-1.5-flash') # Model yang umum digunakan
         return model
     except Exception as e:
         print(f"Error konfigurasi Gemini: {e}")
@@ -65,6 +66,10 @@ def analyze_with_gemini(model, log_entries_str):
 
 def send_whatsapp_notification(message):
     """Mengirim pesan ke WhatsApp menggunakan Fonnte."""
+    if not FONNTE_API_TOKEN or not YOUR_PHONE_NUMBER:
+        print("Error: FONNTE_API_TOKEN atau YOUR_PHONE_NUMBER tidak ditemukan.")
+        return
+
     url = "https://api.fonnte.com/send"
     payload = {
         'target': YOUR_PHONE_NUMBER,
@@ -84,10 +89,9 @@ def send_whatsapp_notification(message):
 # --- 3. FUNGSI UTAMA (MAIN) ---
 
 def parse_log_time(timestamp_str):
-    """Mengubah format waktu log (Nov 10 19:30:01) ke objek datetime."""
-    # Menambahkan tahun saat ini karena log tidak menyertakan tahun
-    log_time = datetime.strptime(timestamp_str, '%b %d %H:%M:%S')
-    return log_time.replace(year=datetime.now().year)
+    """DIPERBAIKI: Mengubah format waktu log (ISO 8601) ke objek datetime."""
+    # timestamp_str akan terlihat seperti: '2025-11-10T12:46:20'
+    return datetime.fromisoformat(timestamp_str)
 
 def main():
     print(f"Memulai monitor SSH pada {datetime.now()}...")
@@ -95,8 +99,6 @@ def main():
     
     time_threshold = datetime.now() - timedelta(minutes=TIME_WINDOW_MINUTES)
     
-    # Dictionary untuk menghitung kegagalan per IP
-    # dan menyimpan log yang relevan
     ip_failures = defaultdict(int)
     ip_log_entries = defaultdict(list)
 
@@ -109,7 +111,6 @@ def main():
                     timestamp_str, ip_address = match.groups()
                     log_time = parse_log_time(timestamp_str)
                     
-                    # Hanya proses log dalam jendela waktu yang ditentukan
                     if log_time > time_threshold:
                         ip_failures[ip_address] += 1
                         ip_log_entries[ip_address].append(line.strip())
@@ -119,7 +120,7 @@ def main():
         return
     except PermissionError:
         print(f"Error: Tidak memiliki izin untuk membaca {LOG_FILE_PATH}.")
-        print("Pastikan Jenkins memiliki izin baca.")
+        print("Pastikan Jenkins (atau user yang menjalankan skrip) memiliki izin baca.")
         return
     except Exception as e:
         print(f"Error saat membaca file log: {e}")
@@ -127,7 +128,7 @@ def main():
 
     # --- 4. PEMROSESAN HASIL & PEMBERITAHUAN ---
     
-    print(f"Pengecekan selesai. Menemukan {len(ip_failures)} IP dengan kegagalan.")
+    print(f"Pengecekan selesai. Menemukan {len(ip_failures)} IP dengan kegagalan dalam {TIME_WINDOW_MINUTES} menit terakhir.")
     
     alert_triggered = False
     for ip, count in ip_failures.items():
@@ -135,25 +136,22 @@ def main():
             alert_triggered = True
             print(f"AMBANG BATAS TERLAMPAUI! IP: {ip}, Percobaan: {count}")
             
-            # Gabungkan semua log untuk IP ini menjadi satu string
             log_str = "\n".join(ip_log_entries[ip])
             
-            # 1. Dapatkan Analisis Gemini
             print(f"Mendapatkan analisis dari Gemini untuk IP {ip}...")
             analysis_result = analyze_with_gemini(gemini_model, log_str)
             
-            # 2. Siapkan Pesan WhatsApp
             header = f"🚨 PERINGATAN BRUTE FORCE SSH 🚨\n\n"
             details = f"IP Asal: {ip}\nJumlah Percobaan: {count}\nRentang Waktu: {TIME_WINDOW_MINUTES} menit terakhir\n\n"
             gemini_section = f"🤖 Analisis Gemini:\n{analysis_result}"
             
             final_message = header + details + gemini_section
             
-            # 3. Kirim Notifikasi
             send_whatsapp_notification(final_message)
 
     if not alert_triggered:
-        print("Sistem aman, tidak perlu khawatir. Tidak ada IP yang melampaui ambang batas.")
+        # DIPERBAIKI: Pesan log lebih jelas
+        print(f"Sistem aman. Tidak ada IP yang melampaui ambang batas {FAILURE_THRESHOLD} percobaan.")
 
 if __name__ == "__main__":
     main()
