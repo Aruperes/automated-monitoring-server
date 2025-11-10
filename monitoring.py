@@ -37,7 +37,7 @@ def setup_gemini():
         return None
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash') # Model yang umum digunakan
+        model = genai.GenerativeModel('gemini-2.5-pro') # Model yang umum digunakan
         return model
     except Exception as e:
         print(f"Error konfigurasi Gemini: {e}")
