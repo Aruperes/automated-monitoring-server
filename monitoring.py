@@ -153,7 +153,7 @@ def main():
             send_whatsapp_notification(final_message)
 
     if not alert_triggered:
-        print("Sistem aman jaya. Tidak ada IP yang melampaui ambang batas.")
+        print("Sistem aman, tidak perlu khawatir. Tidak ada IP yang melampaui ambang batas.")
 
 if __name__ == "__main__":
     main()
