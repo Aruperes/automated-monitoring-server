@@ -17,7 +17,7 @@ LOG_FILE_PATH = '/var/log/auth.log'
 TIME_WINDOW_MINUTES = 10
 
 # Ambang batas kegagalan sebelum memicu peringatan
-FAILURE_THRESHOLD = 5
+FAILURE_THRESHOLD = 2
 
 # Kunci API dan Konfigurasi
 GEMINI_API_KEY = 'AIzaSyDXr6zd7wkAZm1HGOAkAAPK-igMc29n37E'  
