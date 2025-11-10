@@ -14,7 +14,7 @@ from collections import defaultdict
 LOG_FILE_PATH = '/var/log/auth.log' 
 
 # Jendela waktu untuk diperiksa (dalam menit)
-TIME_WINDOW_MINUTES = 10
+TIME_WINDOW_MINUTES = 5
 
 # Ambang batas kegagalan sebelum memicu peringatan
 FAILURE_THRESHOLD = 2
