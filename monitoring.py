@@ -5,21 +5,11 @@ import requests
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-# --- 1. KONFIGURASI ---
-# (Ubah nilai-nilai ini sesuai kebutuhan Anda)
-
-# Lokasi file log SSH
-# Ubuntu/Debian: '/var/log/auth.log'
-# CentOS/RHEL/Fedora: '/var/log/secure'
+# 1.KONFIGURASI
 LOG_FILE_PATH = '/var/log/auth.log' 
-
-# Jendela waktu untuk diperiksa (dalam menit)
 TIME_WINDOW_MINUTES = 5
-
-# Ambang batas kegagalan sebelum memicu peringatan
 FAILURE_THRESHOLD = 2
 
-# Kunci API dan Konfigurasi
 GEMINI_API_KEY = 'AIzaSyDXr6zd7wkAZm1HGOAkAAPK-igMc29n37E'  
 FONNTE_API_TOKEN = 'YojmEUBfp9T7Zt8N9VBm'     
 YOUR_PHONE_NUMBER = '6289698035966'
@@ -28,23 +18,21 @@ LOG_PATTERN = re.compile(
     r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}).*sshd\[\d+\]: Failed password .* from ([\d\.]+) port'
 )
 
-# --- 2. FUNGSI API (GEMINI & FONNTE) ---
+#2. FUNGSI (GEMINI & FONNTE)
 
 def setup_gemini():
-    """Mengkonfigurasi dan menginisialisasi model Gemini."""
     if not GEMINI_API_KEY:
         print("Error: GEMINI_API_KEY tidak ditemukan di environment variables.")
         return None
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash') # Model yang umum digunakan
+        model = genai.GenerativeModel('gemini-2.5-flash') 
         return model
     except Exception as e:
         print(f"Error konfigurasi Gemini: {e}")
         return None
 
 def analyze_with_gemini(model, log_entries_str):
-    """Mengirim log ke Gemini untuk analisis."""
     if not model:
         return "Analisis Gemini tidak tersedia (model gagal dimuat)."
 
@@ -65,7 +53,6 @@ def analyze_with_gemini(model, log_entries_str):
         return f"Gagal menganalisis log. Serangan terdeteksi dari log berikut:\n{log_entries_str}"
 
 def send_whatsapp_notification(message):
-    """Mengirim pesan ke WhatsApp menggunakan Fonnte."""
     if not FONNTE_API_TOKEN or not YOUR_PHONE_NUMBER:
         print("Error: FONNTE_API_TOKEN atau YOUR_PHONE_NUMBER tidak ditemukan.")
         return
@@ -81,16 +68,13 @@ def send_whatsapp_notification(message):
     
     try:
         response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status() # Cek jika ada HTTP error
+        response.raise_for_status()
         print(f"Notifikasi WhatsApp terkirim ke {YOUR_PHONE_NUMBER}.")
     except requests.exceptions.RequestException as e:
         print(f"Error mengirim notifikasi Fonnte: {e}")
 
-# --- 3. FUNGSI UTAMA (MAIN) ---
-
+# 3.FUNGSI MAIN
 def parse_log_time(timestamp_str):
-    """DIPERBAIKI: Mengubah format waktu log (ISO 8601) ke objek datetime."""
-    # timestamp_str akan terlihat seperti: '2025-11-10T12:46:20'
     return datetime.fromisoformat(timestamp_str)
 
 def main():
@@ -126,7 +110,7 @@ def main():
         print(f"Error saat membaca file log: {e}")
         return
 
-    # --- 4. PEMROSESAN HASIL & PEMBERITAHUAN ---
+    # 4. PEMROSESAN HASIL & PEMBERITAHUAN 
     
     print(f"Pengecekan selesai. Menemukan {len(ip_failures)} IP dengan kegagalan dalam {TIME_WINDOW_MINUTES} menit terakhir.")
     
@@ -150,7 +134,6 @@ def main():
             send_whatsapp_notification(final_message)
 
     if not alert_triggered:
-        # DIPERBAIKI: Pesan log lebih jelas
         print(f"Sistem aman. Tidak ada IP yang melampaui ambang batas {FAILURE_THRESHOLD} percobaan.")
 
 if __name__ == "__main__":
