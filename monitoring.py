@@ -1,140 +1,129 @@
-import os
-import re
 import google.generativeai as genai
 import requests
-from datetime import datetime, timedelta
-from collections import defaultdict
+import sys
 
-# 1.KONFIGURASI
-LOG_FILE_PATH = '/var/log/auth.log' 
-TIME_WINDOW_MINUTES = 5
-FAILURE_THRESHOLD = 2
+# ==========================================
+# 1. KONFIGURASI (CREDENTIALS)
+# ==========================================
+# API Keys (Sesuai permintaan, hardcoded untuk demo)
+GEMINI_API_KEY = 'AIzaSyDXr6zd7wkAZm1HGOAkAAPK-igMc29n37E'
+FONNTE_API_TOKEN = 'YojmEUBfp9T7Zt8N9VBm'
+YOUR_PHONE_NUMBER = '6289698035966' # Nomor tujuan (Ibu/Pasien)
 
-GEMINI_API_KEY = 'AIzaSyDXr6zd7wkAZm1HGOAkAAPK-igMc29n37E'  
-FONNTE_API_TOKEN = 'YojmEUBfp9T7Zt8N9VBm'     
-YOUR_PHONE_NUMBER = '6289698035966'
+# Konfigurasi Model AI
+MODEL_NAME = 'gemini-2.5-flash' # Menggunakan model flash agar cepat dan hemat biaya
 
-LOG_PATTERN = re.compile(
-    r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}).*sshd\[\d+\]: Failed password .* from ([\d\.]+) port'
-)
-
-#2. FUNGSI (GEMINI & FONNTE)
-
-def setup_gemini():
+# ==========================================
+# 2. SISTEM OTAK AI (SYSTEM PROMPT)
+# ==========================================
+def get_gemini_response(user_question):
+    """
+    Fungsi untuk meminta saran kesehatan kepada Gemini
+    dengan persona ahli stunting.
+    """
     if not GEMINI_API_KEY:
-        print("Error: GEMINI_API_KEY tidak ditemukan di environment variables.")
-        return None
+        return "Error: API Key Gemini belum diisi."
+
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash') 
-        return model
+        model = genai.GenerativeModel(MODEL_NAME)
+
+        # Instruksi kepribadian bot (Persona)
+        system_instruction = """
+        Anda adalah 'Bidan AI', asisten virtual cerdas yang fokus pada PENCEGAHAN STUNTING.
+        
+        Tugas Anda adalah memberikan edukasi dan saran kepada calon ibu dan ibu hamil.
+        Cakupan pengetahuan Anda meliputi:
+        1. Pra-konsepsi (Persiapan sebelum hamil, gizi calon pengantin).
+        2. Masa Kehamilan (Nutrisi Trimester 1-3, Tablet Tambah Darah).
+        3. Pasca-lahiran & Menyusui (ASI Eksklusif, MPASI, Sanitasi).
+        
+        Aturan Menjawab:
+        - Gaya bahasa: Ramah, empatik, seperti bidan sahabat keluarga, namun tetap ilmiah.
+        - Format: Gunakan poin-poin atau paragraf pendek agar mudah dibaca di WhatsApp.
+        - Selalu tekankan pentingnya "1000 Hari Pertama Kehidupan".
+        - Jika pertanyaan mengarah ke kondisi gawat darurat medis, sarankan segera ke Fasilitas Kesehatan.
+        - Batasi jawaban maksimal 150-200 kata agar tidak terlalu panjang di chat.
+        """
+
+        # Menggabungkan instruksi sistem dengan pertanyaan user
+        full_prompt = f"{system_instruction}\n\nPertanyaan User: {user_question}\n\nJawaban Bidan AI:"
+        
+        response = model.generate_content(full_prompt)
+        return response.text.strip()
+
     except Exception as e:
-        print(f"Error konfigurasi Gemini: {e}")
-        return None
+        return f"Maaf, sistem AI sedang sibuk. Error: {str(e)}"
 
-def analyze_with_gemini(model, log_entries_str):
-    if not model:
-        return "Analisis Gemini tidak tersedia (model gagal dimuat)."
-
-    prompt = f"""
-    Analisis log SSH berikut dari server saya. 
-    Berikan ringkasan ancaman dalam satu paragraf singkat dan sarankan satu tindakan spesifik (misalnya, format perintah firewall/fail2ban).
-    Target audiens adalah admin sistem yang sedang bepergian.
-
-    Log:
-    {log_entries_str}
+# ==========================================
+# 3. FUNGSI KIRIM WHATSAPP (FONNTE)
+# ==========================================
+def send_whatsapp_message(message_content):
     """
-    
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        print(f"Error saat memanggil Gemini API: {e}")
-        return f"Gagal menganalisis log. Serangan terdeteksi dari log berikut:\n{log_entries_str}"
-
-def send_whatsapp_notification(message):
+    Mengirimkan pesan hasil jawaban AI ke WhatsApp pengguna via Fonnte
+    """
     if not FONNTE_API_TOKEN or not YOUR_PHONE_NUMBER:
-        print("Error: FONNTE_API_TOKEN atau YOUR_PHONE_NUMBER tidak ditemukan.")
+        print("Error: Token Fonnte atau Nomor HP belum diset.")
         return
 
     url = "https://api.fonnte.com/send"
+    
+    # Payload Fonnte
     payload = {
         'target': YOUR_PHONE_NUMBER,
-        'message': message,
+        'message': message_content,
+        'countryCode': '62' # Kode negara Indonesia
     }
+    
     headers = {
         'Authorization': FONNTE_API_TOKEN
     }
-    
+
     try:
+        print("⏳ Sedang mengirim ke WhatsApp...")
         response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status()
-        print(f"Notifikasi WhatsApp terkirim ke {YOUR_PHONE_NUMBER}.")
-    except requests.exceptions.RequestException as e:
-        print(f"Error mengirim notifikasi Fonnte: {e}")
-
-# 3.FUNGSI MAIN
-def parse_log_time(timestamp_str):
-    return datetime.fromisoformat(timestamp_str)
-
-def main():
-    print(f"Memulai monitor SSH pada {datetime.now()}...")
-    gemini_model = setup_gemini()
-    
-    time_threshold = datetime.now() - timedelta(minutes=TIME_WINDOW_MINUTES)
-    
-    ip_failures = defaultdict(int)
-    ip_log_entries = defaultdict(list)
-
-    try:
-        with open(LOG_FILE_PATH, 'r') as f:
-            for line in f:
-                match = LOG_PATTERN.search(line)
-                
-                if match:
-                    timestamp_str, ip_address = match.groups()
-                    log_time = parse_log_time(timestamp_str)
-                    
-                    if log_time > time_threshold:
-                        ip_failures[ip_address] += 1
-                        ip_log_entries[ip_address].append(line.strip())
-
-    except FileNotFoundError:
-        print(f"Error: File log tidak ditemukan di {LOG_FILE_PATH}")
-        return
-    except PermissionError:
-        print(f"Error: Tidak memiliki izin untuk membaca {LOG_FILE_PATH}.")
-        print("Pastikan Jenkins (atau user yang menjalankan skrip) memiliki izin baca.")
-        return
+        print(f"✅ Status Pengiriman: {response.text}")
     except Exception as e:
-        print(f"Error saat membaca file log: {e}")
-        return
+        print(f"❌ Gagal mengirim WA: {e}")
 
-    # 4. PEMROSESAN HASIL & PEMBERITAHUAN 
-    
-    print(f"Pengecekan selesai. Menemukan {len(ip_failures)} IP dengan kegagalan dalam {TIME_WINDOW_MINUTES} menit terakhir.")
-    
-    alert_triggered = False
-    for ip, count in ip_failures.items():
-        if count >= FAILURE_THRESHOLD:
-            alert_triggered = True
-            print(f"AMBANG BATAS TERLAMPAUI! IP: {ip}, Percobaan: {count}")
-            
-            log_str = "\n".join(ip_log_entries[ip])
-            
-            print(f"Mendapatkan analisis dari Gemini untuk IP {ip}...")
-            analysis_result = analyze_with_gemini(gemini_model, log_str)
-            
-            header = f"🚨 PERINGATAN BRUTE FORCE SSH 🚨\n\n"
-            details = f"IP Asal: {ip}\nJumlah Percobaan: {count}\nRentang Waktu: {TIME_WINDOW_MINUTES} menit terakhir\n\n"
-            gemini_section = f"🤖 Analisis Gemini:\n{analysis_result}"
-            
-            final_message = header + details + gemini_section
-            
-            send_whatsapp_notification(final_message)
+# ==========================================
+# 4. MAIN LOOP (INTERAKTIF)
+# ==========================================
+def main():
+    print("\n" + "="*50)
+    print("   🤖 CHATBOT PENCEGAHAN STUNTING (DEMO)   ")
+    print("="*50)
+    print("Ketik pertanyaan Anda tentang kehamilan/gizi anak.")
+    print("Ketik 'exit' atau 'keluar' untuk berhenti.\n")
 
-    if not alert_triggered:
-        print(f"Sistem aman. Tidak ada IP yang melampaui ambang batas {FAILURE_THRESHOLD} percobaan.")
+    while True:
+        try:
+            # 1. Input Pertanyaan (Simulasi pesan masuk)
+            user_input = input("👩 Ibu Bertanya: ")
+            
+            if user_input.lower() in ['exit', 'keluar', 'stop']:
+                print("Terima kasih, sehat selalu! 👋")
+                break
+            
+            if not user_input.strip():
+                continue
+
+            # 2. Proses AI
+            print("🤔 Bidan AI sedang mengetik...")
+            ai_response = get_gemini_response(user_input)
+            
+            # 3. Tampilkan di Terminal (Log)
+            print("-" * 30)
+            print(f"💊 Jawaban AI:\n{ai_response}")
+            print("-" * 30)
+
+            # 4. Kirim ke WhatsApp Target
+            send_whatsapp_message(ai_response)
+            print("\n")
+
+        except KeyboardInterrupt:
+            print("\nProgram dihentikan paksa.")
+            sys.exit()
 
 if __name__ == "__main__":
     main()
